@@ -19,16 +19,16 @@ const bundleName = `plugin-${packageJson.version}`;
 const scriptDomain =
   (() => {
     if (!process.env.NEXT_PUBLIC_IS_PLUGIN_DEV) {
-         return null
+      return null
     }
     if (typeof window === 'undefined' || typeof document === 'undefined') return '';
-    
+
     const url = (document.currentScript as HTMLScriptElement)?.src;
     if (url) {
       return new URL(url).origin;
     }
     return null;
-  })() || 'https://plugin.jup.ag';
+  })() || 'https://cdn.jsdelivr.net/gh/fachebot/jupiter-plugin-plus@main/public';
 
 async function loadRemote(id: string, href: string, type: 'text/javascript' | 'stylesheet') {
   return new Promise((res, rej) => {
@@ -124,9 +124,8 @@ const RenderShell = (props: IInit) => {
   const contentClassName = useMemo(() => {
     // Default Modal
     if (!displayMode || displayMode === 'modal' || displayMode === 'integrated') {
-      return `flex flex-col h-[550px] w-full max-w-[360px] overflow-auto text-black relative bg-black rounded-lg webkit-scrollbar ${
-        containerClassName || ''
-      }`;
+      return `flex flex-col h-[550px] w-full max-w-[360px] overflow-auto text-black relative bg-black rounded-lg webkit-scrollbar ${containerClassName || ''
+        }`;
     } else if (displayMode === 'widget') {
       return 'flex flex-col  h-[550px] w-full overflow-auto text-black relative webkit-scrollbar';
     }
@@ -228,9 +227,8 @@ const RenderWidgetShell = (props: IInit) => {
 
       <div
         id="target-container"
-        className={`absolute overflow-hidden ${classes.contentClassName} flex flex-col w-[90vw] h-[600px] max-w-[384px] max-h-[75vh] rounded-2xl bg-black transition-opacity duration-300 shadow-2xl ${
-          !isOpen ? '!h-0 !w-0 opacity-0' : 'opacity-100'
-        }`}
+        className={`absolute overflow-hidden ${classes.contentClassName} flex flex-col w-[90vw] h-[600px] max-w-[384px] max-h-[75vh] rounded-2xl bg-black transition-opacity duration-300 shadow-2xl ${!isOpen ? '!h-0 !w-0 opacity-0' : 'opacity-100'
+          }`}
       >
         <RenderLoadableJupiter {...props} />
       </div>
