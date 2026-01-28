@@ -11,7 +11,7 @@ import { useSwapContext } from 'src/contexts/SwapContext';
 import { useWalletPassThrough } from 'src/contexts/WalletPassthroughProvider';
 import ChevronDownIcon from 'src/icons/ChevronDownIcon';
 import WalletIcon from 'src/icons/WalletIcon';
-import { detectedSeparator } from 'src/misc/utils';
+import { detectedSeparator, hasNumericValue } from 'src/misc/utils';
 import { MAX_INPUT_LIMIT, MINIMUM_SOL_BALANCE, WRAPPED_SOL_MINT } from '../constants';
 import { CoinBalanceUSD } from './CoinBalanceUSD';
 import PriceInfo from './PriceInfo/index';
@@ -167,9 +167,11 @@ const Form: React.FC<{
     fromTokenInfo,
     toTokenInfo,
     quoteResponseMeta,
-    formProps: { fixedAmount, swapMode, fixedMint },
+    formProps: { fixedAmount, fixedMint },
+    currentSwapMode,
     loading,
     isToPairFocused,
+    setIsToPairFocused,
     setTxStatus,
     setLastSwapResult,
   } = useSwapContext();
@@ -256,6 +258,16 @@ const Form: React.FC<{
     return accBalanceObj.uiAmount.toString();
   }, [balances, fromTokenInfo?.id]);
 
+  const toBalance: string | null = useMemo(() => {
+    if (!toTokenInfo?.id) return null;
+
+    if (!balances) return null;
+    const accBalanceObj = balances[toTokenInfo.id];
+    if (!accBalanceObj) return null;
+
+    return accBalanceObj.uiAmount.toString();
+  }, [balances, toTokenInfo?.id]);
+
   const onClickMax = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {
       e.preventDefault();
@@ -309,7 +321,62 @@ const Form: React.FC<{
     [balance, fromTokenInfo?.id, fromTokenInfo?.decimals, setForm],
   );
 
+  const onClickToMax = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      e.preventDefault();
+
+      if (!toBalance) return;
+      if (toTokenInfo?.id === WRAPPED_SOL_MINT.toBase58()) {
+        setForm((prev) => ({
+          ...prev,
+          toValue: new Decimal(toBalance).gt(MINIMUM_SOL_BALANCE)
+            ? new Decimal(toBalance).minus(MINIMUM_SOL_BALANCE).toFixed(9)
+            : '0',
+        }));
+      } else {
+        setForm((prev) => ({
+          ...prev,
+          toValue: toBalance,
+        }));
+      }
+    },
+    [toBalance, toTokenInfo?.id, setForm],
+  );
+
+  const onClickToHalf = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+
+      if (!toBalance) return;
+      if (toTokenInfo?.id === WRAPPED_SOL_MINT.toBase58()) {
+        const balanceDecimal = new Decimal(toBalance);
+        if (balanceDecimal.gt(MINIMUM_SOL_BALANCE)) {
+          const availableBalance = balanceDecimal.minus(MINIMUM_SOL_BALANCE);
+          const halfAmount = availableBalance.div(2);
+          setForm((prev) => ({
+            ...prev,
+            toValue: halfAmount.gt(0) ? halfAmount.toFixed(9) : '0',
+          }));
+        } else {
+          setForm((prev) => ({
+            ...prev,
+            toValue: '0',
+          }));
+        }
+      } else {
+        const halfAmount = new Decimal(toBalance).div(2);
+        setForm((prev) => ({
+          ...prev,
+          toValue: halfAmount.toFixed(toTokenInfo?.decimals || 9),
+        }));
+      }
+    },
+    [toBalance, toTokenInfo?.id, toTokenInfo?.decimals, setForm],
+  );
+
   const onClickSwitchPair = () => {
+    isToPairFocused.current = false;
+    setIsToPairFocused(false);
     setForm((prev) => ({
       ...prev,
       fromValue: '',
@@ -322,17 +389,27 @@ const Form: React.FC<{
   const { inputAmountDisabled, outputAmountDisabled } = useMemo(() => {
     const result = { inputAmountDisabled: true, outputAmountDisabled: true };
     if (!fixedAmount) {
-      if (swapMode === SwapMode.ExactIn) {
+      const hasFromValue = !!(form.fromValue && hasNumericValue(form.fromValue));
+      const hasToValue = !!(form.toValue && hasNumericValue(form.toValue));
+
+      if (currentSwapMode === 'ExactIn') {
+        // ExactIn mode: user is typing in Selling input
         result.inputAmountDisabled = false;
-      } else if (swapMode === SwapMode.ExactOut) {
+        // Disable Buying input only if Selling input has a value
+        result.outputAmountDisabled = hasFromValue;
+      } else if (currentSwapMode === 'ExactOut') {
+        // ExactOut mode: user is typing in Buying input
         result.outputAmountDisabled = false;
+        // Disable Selling input only if Buying input has a value
+        result.inputAmountDisabled = hasToValue;
       } else {
+        // ExactInOrOut mode: both inputs can be edited
         result.inputAmountDisabled = false;
         result.outputAmountDisabled = false;
       }
     }
     return result;
-  }, [fixedAmount, swapMode]);
+  }, [fixedAmount, currentSwapMode, form.fromValue, form.toValue]);
 
   const onClickSelectFromMint = useCallback(() => {
     if (shouldDisabledFromSelector) return;
@@ -370,14 +447,17 @@ const Form: React.FC<{
             tokenInfo={fromTokenInfo!}
             onBalanceClick={(e) => {
               isToPairFocused.current = false;
+              setIsToPairFocused(false);
               onClickMax(e);
             }}
             onClickHalf={(e) => {
               isToPairFocused.current = false;
+              setIsToPairFocused(false);
               onClickHalf(e);
             }}
             onClickMax={(e) => {
               isToPairFocused.current = false;
+              setIsToPairFocused(false);
               onClickMax(e);
             }}
             title="Selling"
@@ -388,7 +468,7 @@ const Form: React.FC<{
           >
             {fromTokenInfo?.decimals && (
               <NumericFormat
-                disabled={fixedAmount || swapMode === SwapMode.ExactOut}
+                disabled={inputAmountDisabled}
                 value={typeof form.fromValue === 'undefined' ? '' : form.fromValue}
                 decimalScale={fromTokenInfo.decimals}
                 thousandSeparator={thousandSeparator}
@@ -400,11 +480,16 @@ const Form: React.FC<{
                 className={cn(
                   'w-full h-[40px] bg-transparent text-primary-text text-right font-semibold text-xl placeholder:text-primary-text/50',
                   {
-                    'cursor-not-allowed': inputAmountDisabled || swapMode === SwapMode.ExactOut,
+                    'cursor-not-allowed': inputAmountDisabled,
                   },
                 )}
+                onFocus={() => {
+                  isToPairFocused.current = false;
+                  setIsToPairFocused(false);
+                }}
                 onKeyDown={() => {
                   isToPairFocused.current = false;
+                  setIsToPairFocused(false);
                 }}
                 decimalSeparator={detectedSeparator}
                 isAllowed={withValueLimit}
@@ -416,15 +501,31 @@ const Form: React.FC<{
           </div>
           <FormInputContainer
             tokenInfo={toTokenInfo!}
+            onBalanceClick={(e) => {
+              isToPairFocused.current = true;
+              setIsToPairFocused(true);
+              onClickToMax(e);
+            }}
+            onClickHalf={(e) => {
+              isToPairFocused.current = true;
+              setIsToPairFocused(true);
+              onClickToHalf(e);
+            }}
+            onClickMax={(e) => {
+              isToPairFocused.current = true;
+              setIsToPairFocused(true);
+              onClickToMax(e);
+            }}
             title="Buying"
             pairSelectDisabled={shouldDisabledToSelector}
             onClickSelectPair={onClickSelectToMint}
             value={form.toValue}
+            isWalletConnected={connected}
           >
             {toTokenInfo?.decimals && (
               <NumericFormat
                 inputMode="decimal"
-                disabled={outputAmountDisabled || swapMode === SwapMode.ExactIn}
+                disabled={outputAmountDisabled}
                 value={typeof form.toValue === 'undefined' ? '' : form.toValue}
                 decimalScale={toTokenInfo.decimals}
                 thousandSeparator={thousandSeparator}
@@ -434,12 +535,16 @@ const Form: React.FC<{
                 className={cn(
                   'h-[40px] w-full bg-transparent text-primary-text text-right font-semibold text-lg placeholder:text-primary-text/50',
                   {
-                    'cursor-not-allowed': outputAmountDisabled || swapMode === SwapMode.ExactIn,
+                    'cursor-not-allowed': outputAmountDisabled,
                   },
                 )}
-                placeholder={swapMode === SwapMode.ExactOut ? 'Enter desired amount' : '0.00'}
+                placeholder='0.00'
                 decimalSeparator={detectedSeparator}
                 isAllowed={withValueLimit}
+                onFocus={() => {
+                  isToPairFocused.current = true;
+                  setIsToPairFocused(true);
+                }}
                 onKeyDown={(e) => {
                   if (
                     e.metaKey ||
@@ -452,6 +557,7 @@ const Form: React.FC<{
                     return;
                   }
                   isToPairFocused.current = true;
+                  setIsToPairFocused(true);
                 }}
               />
             )}

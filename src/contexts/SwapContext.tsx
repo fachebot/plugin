@@ -40,15 +40,15 @@ export type QuoteResponse = {
 
 export type SwapResult =
   | {
-      txid: string;
-      inputAddress: PublicKey;
-      outputAddress: PublicKey;
-      inputAmount: number;
-      outputAmount: number;
-    }
+    txid: string;
+    inputAddress: PublicKey;
+    outputAddress: PublicKey;
+    inputAmount: number;
+    outputAmount: number;
+  }
   | {
-      error?: TransactionError;
-    };
+    error?: TransactionError;
+  };
 
 export type SwappingStatus = 'loading' | 'pending-approval' | 'sending' | 'fail' | 'success' | 'timeout';
 export interface ISwapContext {
@@ -78,11 +78,11 @@ export interface ISwapContext {
   scriptDomain: IInit['scriptDomain'];
   swapping: {
     txStatus:
-      | {
-          txid: string;
-          status: SwappingStatus;
-        }
-      | undefined;
+    | {
+      txid: string;
+      status: SwappingStatus;
+    }
+    | undefined;
   };
   setTxStatus: Dispatch<SetStateAction<{ txid: string; status: SwappingStatus } | undefined>>;
   reset: (props?: { resetValues: boolean }) => void;
@@ -91,7 +91,9 @@ export interface ISwapContext {
   quoteError?: unknown;
   lastRefreshTimestamp: number | undefined;
   isToPairFocused: MutableRefObject<boolean>;
+  setIsToPairFocused: (value: boolean) => void;
   enableWalletPassthrough?: boolean;
+  currentSwapMode: 'ExactIn' | 'ExactOut';
 }
 
 export const SwapContext = createContext<ISwapContext | null>(null);
@@ -125,6 +127,7 @@ export const SwapContextProvider = (props: PropsWithChildren<IInit>) => {
   const { wallet } = useWalletPassThrough();
   const { data: balances, refetch: refetchBalances } = useBalances();
   const isToPairFocused = useRef<boolean>(false);
+  const [isToPairFocusedState, setIsToPairFocusedState] = useState<boolean>(false);
   const walletPublicKey = useMemo(() => wallet?.adapter.publicKey?.toString(), [wallet?.adapter.publicKey]);
   const formProps: FormProps = useMemo(() => ({ ...DEFAULT_FORM_PROPS, ...originalFormProps }), [originalFormProps]);
 
@@ -193,6 +196,10 @@ export const SwapContextProvider = (props: PropsWithChildren<IInit>) => {
     }
   }, [debouncedForm.fromValue, debouncedForm.toValue, fromTokenInfo, toTokenInfo]);
 
+  const currentSwapMode = useMemo(() => {
+    return isToPairFocusedState ? 'ExactOut' : 'ExactIn';
+  }, [isToPairFocusedState]);
+
   const [txStatus, setTxStatus] = useState<ISwapContext['swapping']['txStatus']>(undefined);
   const {
     data: ogQuoteResponseMeta,
@@ -209,7 +216,7 @@ export const SwapContextProvider = (props: PropsWithChildren<IInit>) => {
       outputMint: debouncedForm.toMint,
       amount: amount.toString(),
       taker: walletPublicKey,
-      swapMode: isToPairFocused.current ? 'ExactOut' : 'ExactIn',
+      swapMode: currentSwapMode,
       referralAccount: formProps.referralAccount,
       referralFee: formProps.referralFee,
       excludeDexes: formProps.excludeDexes,
@@ -281,16 +288,20 @@ export const SwapContextProvider = (props: PropsWithChildren<IInit>) => {
       if (!fromTokenInfo || !toTokenInfo) return prev;
 
       const { outAmount, inAmount } = quoteResponseMeta?.quoteResponse || {};
-      if (!isToPairFocused.current) {
+      if (!isToPairFocusedState) {
+        // User is typing in Selling input (ExactIn mode)
+        // Update Buying input with outAmount
         newValue.toValue = outAmount ? new Decimal(outAmount.toString()).div(10 ** toTokenInfo.decimals).toFixed() : '';
       } else {
+        // User is typing in Buying input (ExactOut mode)
+        // Update Selling input with inAmount
         newValue.fromValue = inAmount
           ? new Decimal(inAmount.toString()).div(10 ** fromTokenInfo.decimals).toFixed()
           : '';
       }
       return newValue;
     });
-  }, [form.fromValue, form.toValue, fromTokenInfo, quoteResponseMeta, toTokenInfo]);
+  }, [form.fromValue, form.toValue, fromTokenInfo, quoteResponseMeta, toTokenInfo, isToPairFocusedState]);
 
   const [lastSwapResult, setLastSwapResult] = useState<ISwapContext['lastSwapResult']>(null);
 
@@ -346,6 +357,8 @@ export const SwapContextProvider = (props: PropsWithChildren<IInit>) => {
         quoteError,
         lastRefreshTimestamp,
         isToPairFocused,
+        setIsToPairFocused: setIsToPairFocusedState,
+        currentSwapMode,
         displayMode,
         formProps,
         scriptDomain,
